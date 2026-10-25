@@ -1,0 +1,65 @@
+# Terraform
+#
+# .terraform.lock.hcl is intentionally committed. It pins provider versions
+# and hashes and does not contain secrets. Do not ignore it.
+
+**/.terraform/
+*.tfstate
+*.tfstate.*
+.terraform.tfstate.lock.info
+
+crash.log
+crash.*.log
+
+# Variable files carry environment data and often secrets.
+# Commit only *.tfvars.example (and *.tfvars.json.example) templates.
+*.tfvars
+*.tfvars.json
+!*.tfvars.example
+!*.tfvars.json.example
+
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+*tfplan*
+plan.out
+*.plan
+
+# CLI config can point at credential helpers or static keys.
+.terraformrc
+terraform.rc
+
+# Local secrets and cloud credentials
+.env
+.env.*
+!.env.example
+.aws/
+
+# Private key material. Public portfolio repo: never commit these.
+*.pem
+*.key
+*.p12
+*.pfx
+
+# OS cruft
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Editor cruft
+.idea/
+.vscode/
+*.code-workspace
+.history/
+.cursor/
+*.swp
+*.swo
+*~
+*.sublime-project
+*.sublime-workspace
