@@ -87,8 +87,11 @@ data "aws_iam_policy_document" "state_key" {
       values   = [local.kms_via_service]
     }
 
+    # IfExists so control-plane calls that omit the context (for example
+    # PutBucketEncryption) still succeed. Object reads and writes include the
+    # context, and those must name this bucket.
     condition {
-      test     = "ArnLike"
+      test     = "ArnLikeIfExists"
       variable = "kms:EncryptionContext:aws:s3:arn"
       values = [
         local.state_bucket_arn,

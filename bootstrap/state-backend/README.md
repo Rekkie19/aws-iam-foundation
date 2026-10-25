@@ -66,7 +66,7 @@ terraform {
 
 Initialize with `terraform init -backend-config=backend.hcl`.
 
-The KMS key policy allows cryptographic use only through S3, only for this state bucket's encryption context, and only for principals in this account. A future deploy role still needs identity-policy permission for `s3:ListBucket`, `s3:GetObject`, `s3:PutObject` on its state key, `s3:GetObject`, `s3:PutObject`, and `s3:DeleteObject` on the matching `.tflock` object, and `kms:Decrypt`, `kms:Encrypt`, and `kms:GenerateDataKey` on this key via S3.
+The KMS key policy allows cryptographic use only through S3 and only for principals in this account. When the request includes an encryption context, that context must be this state bucket. A future deploy role still needs identity-policy permission for `s3:ListBucket`, `s3:GetObject`, `s3:PutObject` on its state key, `s3:GetObject`, `s3:PutObject`, and `s3:DeleteObject` on the matching `.tflock` object, and `kms:Decrypt`, `kms:Encrypt`, and `kms:GenerateDataKey` on this key via S3.
 
 ## Recover the backend settings
 
