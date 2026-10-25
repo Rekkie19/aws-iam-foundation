@@ -208,7 +208,7 @@ Milestone 11 replaces this section with the real procedure. That write-up will d
 - How the session is identified in CloudTrail afterward.
 - How credentials are rotated and how the incident is closed.
 
-Until Identity Center exists, the only emergency credential is the management-account root user. Use it only for tasks that require root, then sign out. The lockdown checklist is the control on that credential. Day-to-day administration and Terraform applies wait for Identity Center and the deploy roles.
+Until Identity Center exists, the only emergency credential is the management-account root user. Use it only for tasks that require root, then sign out. The lockdown checklist is the control on that credential. Milestone 2 applies the state backend with a separate short-lived management-account session. Later applies move to the Identity Center permission sets and the OIDC deploy roles.
 
 ## Roadmap
 
