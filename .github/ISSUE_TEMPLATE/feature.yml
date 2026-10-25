@@ -1,0 +1,75 @@
+name: Feature or task
+description: Propose a feature, module, or task for the identity foundation.
+labels: ["enhancement"]
+assignees:
+  - Rekkie19
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe the change. Do not include AWS account IDs, access keys, passwords, session tokens, Terraform state, or other secrets.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What should change, and why?
+      placeholder: Add an SCP that denies disabling CloudTrail in member accounts.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: milestone
+    attributes:
+      label: Roadmap milestone
+      description: Which milestone does this belong to?
+      options:
+        - "1. Root lockdown and repository scaffold"
+        - "2. S3 state backend bootstrap"
+        - "3. Pre-commit hooks"
+        - "4. Organizations and OUs"
+        - "5. SCP guardrails"
+        - "6. IAM Identity Center permission sets"
+        - "7. GitHub OIDC dev deploy role"
+        - "8. Pull-request CI workflow"
+        - "9. Prod role and production environment"
+        - "10. CloudTrail, GuardDuty, Access Analyzer, billing alarm"
+        - "11. README and threat model"
+        - Not tied to a milestone
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+      description: Approach, modules touched, and anything you have already ruled out.
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: How will we know this is done?
+      placeholder: |
+        - [ ] The dev OU denies the action
+        - [ ] A test covers the exception path
+    validations:
+      required: true
+
+  - type: textarea
+    id: security
+    attributes:
+      label: Security impact
+      description: Does this widen a permission set, an SCP exception, an OIDC trust policy, or the state backend? Write "none" if it does not.
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: hygiene
+    attributes:
+      label: Hygiene
+      options:
+        - label: This report contains no secrets, credentials, or AWS account IDs.
+          required: true

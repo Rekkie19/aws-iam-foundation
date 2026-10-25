@@ -1,0 +1,5 @@
+# Default owner for every path. GitHub enforces this only after branch
+# protection (or a ruleset) on the default branch requires review from
+# code owners. Last matching pattern wins.
+
+* @Rekkie19

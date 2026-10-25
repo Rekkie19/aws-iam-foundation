@@ -1,0 +1,39 @@
+# Version updates for GitHub Actions and Terraform.
+# There are no workflows or .tf files yet. Dependabot will report an empty
+# ecosystem until those manifests exist; that is expected for this scaffold.
+# When bootstrap/, modules/, or envs/ gain Terraform, add those directories
+# here. directory: "/" does not recurse.
+
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+
+  - package-ecosystem: terraform
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      terraform:
+        patterns:
+          - "*"
