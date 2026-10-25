@@ -1,8 +1,7 @@
 # Version updates for GitHub Actions and Terraform.
-# There are no workflows or .tf files yet. Dependabot will report an empty
-# ecosystem until those manifests exist; that is expected for this scaffold.
-# When bootstrap/, modules/, or envs/ gain Terraform, add those directories
-# here. directory: "/" does not recurse.
+# directory does not recurse. Add a terraform entry for each new root module
+# or module directory when it gains .tf files. GitHub Actions stays empty
+# until workflows exist.
 
 version: 2
 updates:
@@ -23,7 +22,7 @@ updates:
           - "*"
 
   - package-ecosystem: terraform
-    directory: /
+    directory: /bootstrap/state-backend
     schedule:
       interval: weekly
       day: monday

@@ -1,0 +1,6 @@
+# Copy to terraform.tfvars (gitignored) and change name_prefix.
+# Bucket names are <name_prefix>-tfstate and <name_prefix>-tfstate-logs.
+# They must be globally unique. Do not put an account ID in the prefix.
+
+aws_region  = "us-east-1"
+name_prefix = "example-foundation"

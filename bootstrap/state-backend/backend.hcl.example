@@ -1,0 +1,18 @@
+# Partial S3 backend configuration.
+#
+# Copy to backend.hcl (gitignored) and replace the placeholders with
+# `terraform output` after the bootstrap apply. The filled-in KMS ARN
+# contains the account ID. Do not commit backend.hcl.
+#
+# This file is for every later root module, and for migrating this module's
+# own state. Use a different key per root module. This module's key is
+# bootstrap/state-backend/terraform.tfstate.
+#
+#   terraform init -backend-config=backend.hcl
+
+bucket       = "NAME_PREFIX-tfstate"
+key          = "bootstrap/state-backend/terraform.tfstate"
+region       = "us-east-1"
+encrypt      = true
+kms_key_id   = "arn:aws:kms:REGION:ACCOUNT_ID:key/KEY_ID"
+use_lockfile = true

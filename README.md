@@ -4,7 +4,7 @@ Secure AWS identity foundation, built with Terraform and operated from this repo
 
 The design uses AWS Organizations, IAM Identity Center for people, and GitHub Actions OpenID Connect (OIDC) for automation. There are no IAM users and no long-lived access keys. Preventive guardrails are service control policies (SCPs). Detective controls (an organization CloudTrail, GuardDuty, and IAM Access Analyzer) are delegated to a Security account. Terraform state lives in an encrypted, versioned S3 backend with locking.
 
-This repository is the scaffold only. It contains no Terraform modules and deploys nothing. The [roadmap](#roadmap) is the order of work. Complete the [root-account lockdown](docs/root-account-lockdown.md) before any later milestone applies infrastructure.
+Milestone 2 is the state-backend bootstrap in [`bootstrap/state-backend`](bootstrap/state-backend). It deploys only when you apply it. The organization, Identity Center, and guardrails are still ahead. The [roadmap](#roadmap) is the order of work. Complete the [root-account lockdown](docs/root-account-lockdown.md) before that apply.
 
 ## Target architecture
 
@@ -50,15 +50,18 @@ flowchart TB
 
   security -->|"delegated administrator"| detection["Org CloudTrail, GuardDuty, Access Analyzer"]
 
-  devRole --> state["Encrypted versioned S3 state with locking"]
+  devRole --> state["S3 state bucket, SSE-KMS, lockfile"]
   prodRole --> state
+  state --> kms["Customer-managed key, rotation on"]
 ```
 
 People sign in through IAM Identity Center and receive temporary credentials. GitHub Actions assumes a deploy role through OIDC. The trust policy will allow this repository only, and only the ref that should deploy. The production role is approval-gated by a GitHub `production` environment. SCPs apply to every OU, including Security. The Security account is the delegated administrator for the organization trail, GuardDuty, and Access Analyzer. Workloads do not run in the management account.
 
+The state bucket is versioned, encrypted with a customer-managed key, and locked with Terraform's S3 lockfile (`use_lockfile`). Server access logs go to a second bucket. Deploy roles do not exist yet; the bootstrap apply is a local admin session, described under [Deployment](#deployment).
+
 ## Architecture decisions
 
-These decisions are accepted for the design. The milestones below implement them. Each record stays short until the module that carries it exists.
+These decisions are accepted for the design. Milestone 2 implements ADR-005. The others are still ahead.
 
 ### ADR-001: People use Identity Center
 
@@ -76,9 +79,13 @@ The organization has a Security OU, a Workloads-Dev OU, and a Workloads-Prod OU.
 
 SCPs deny classes of action that the foundation must prevent (for example disabling the trail, leaving the organization, or weakening the account baseline). Access is granted only by identity-based policies and permission sets, which stay least privilege. Exceptions are explicit, reviewed, and covered by tests.
 
-### ADR-005: Remote state is encrypted, versioned, and locked
+### ADR-005: Remote state is encrypted, versioned, and locked with an S3 lockfile
 
-State is not committed. The backend bucket is encrypted, versioned, and blocks public access. Locking prevents concurrent applies. `.terraform.lock.hcl` is committed so provider versions and hashes are reproducible. The lock mechanism (S3 lockfile or a separate lock table) is chosen when the bootstrap milestone pins the Terraform version. Variable files (`*.tfvars`) stay local; only `*.tfvars.example` templates are committed.
+State is not committed. The backend bucket is encrypted with a customer-managed KMS key (rotation on), versioned, and blocks public access. Uploads that are not TLS, or that do not name that key, are denied. `.terraform.lock.hcl` is committed so provider versions and hashes are reproducible. Variable files (`*.tfvars`) stay local; only `*.tfvars.example` templates are committed.
+
+Locking uses Terraform's native S3 lockfile (`use_lockfile = true`), which needs Terraform 1.10 or later. Terraform writes a `.tflock` object beside the state object and relies on S3 conditional writes. DynamoDB locking is deprecated in Terraform and this foundation does not create a lock table: one less datastore, and the lock is covered by the same bucket policy as the state. Noncurrent versions, including lock-object versions, expire after 90 days, with the five newest retained.
+
+The bootstrap root module is applied once with local state, then its own state can be migrated into the bucket. See [bootstrap/state-backend](bootstrap/state-backend). Server access logs for the state bucket go to a second bucket encrypted with SSE-S3, because S3 log delivery does not support an SSE-KMS destination. Organization CloudTrail data events for both buckets remain milestone 10.
 
 ### ADR-006: Detective controls live in the Security account
 
@@ -130,7 +137,7 @@ Workload application security, guest operating-system hardening, and vulnerabili
 
 ## Repository layout
 
-Present in this scaffold:
+Present:
 
 ```text
 .
@@ -144,6 +151,8 @@ Present in this scaffold:
 │   ├── dependabot.yml
 │   └── pull_request_template.md
 ├── .gitignore
+├── bootstrap
+│   └── state-backend       # remote state bucket, KMS key, access logs
 ├── docs
 │   └── root-account-lockdown.md
 ├── LICENSE
@@ -154,7 +163,6 @@ Present in this scaffold:
 Planned, and created by the milestone that fills them:
 
 ```text
-bootstrap/                  # one-time remote state backend
 modules/
   organizations/            # organization and OUs
   scp/                      # guardrail policies and tests
@@ -176,7 +184,8 @@ docs/                       # this lockdown checklist, then ADRs and the threat 
 - Root lockdown complete or in progress, using [docs/root-account-lockdown.md](docs/root-account-lockdown.md).
 - Two phishing-resistant MFA devices for root (FIDO2 security keys or passkeys), stored apart from each other.
 - A password manager for the root password.
-- Terraform 1.10 or later, AWS CLI v2, and Git.
+- Terraform 1.10 or later (the S3 lockfile needs it), AWS CLI v2, and Git.
+- An SSO session or assumed-role admin profile for the bootstrap apply. The root user is the wrong credential for that apply.
 - Admin access to this GitHub repository, so later milestones can add the OIDC trust, the `production` environment, and branch protection.
 - No IAM user and no access keys. Do not create either one to unblock Terraform.
 
@@ -184,15 +193,46 @@ Identity Center arrives in a later milestone. The state-backend bootstrap uses a
 
 ## Deployment
 
-There is nothing to plan or apply in this commit.
+### Bootstrap the state backend
 
-Intended order, once the modules exist:
+This is the one root module that starts on local state. The bucket does not exist until the first apply. Use an SSO session or an assumed-role admin profile. Do not use the root user, and do not create access keys. The module README has the migration and recovery detail: [bootstrap/state-backend/README.md](bootstrap/state-backend/README.md).
 
-1. Finish root lockdown.
-2. Apply the state backend once, from a trusted workstation, with a short-lived session. Migrate any local state into that backend before further applies.
-3. Open pull requests for each milestone. Review the plan in the pull request. Do not paste secrets, account IDs, or state into the discussion.
-4. Apply non-production changes from the dev deploy role after the OIDC role exists.
-5. Apply production from the GitHub `production` environment after a required reviewer approves the run.
+```bash
+export AWS_PROFILE=your-admin-profile
+cd bootstrap/state-backend
+cp terraform.tfvars.example terraform.tfvars
+```
+
+Edit `terraform.tfvars`. Choose a globally unique `name_prefix` and the `aws_region`.
+
+```bash
+terraform init -backend=false
+terraform plan -out=tfplan
+terraform apply tfplan
+```
+
+To move this module's own state into the bucket afterwards:
+
+```bash
+umask 077
+terraform output -raw backend_config_hcl > backend.hcl
+cat > backend.tf <<'EOF'
+terraform {
+  backend "s3" {}
+}
+EOF
+terraform init -migrate-state -backend-config=backend.hcl
+terraform state pull >/dev/null
+rm -f terraform.tfstate terraform.tfstate.backup tfplan
+```
+
+`backend.hcl` contains the KMS key ARN, and that ARN contains the account ID. It is gitignored. Keep it in a password manager, not in a pull request. Later root modules copy [backend.hcl.example](bootstrap/state-backend/backend.hcl.example) and set their own `key`.
+
+### After the backend exists
+
+1. Open pull requests for each milestone. Review the plan in the pull request. Do not paste secrets, account IDs, or state into the discussion.
+2. Apply non-production changes from the dev deploy role after the OIDC role exists.
+3. Apply production from the GitHub `production` environment after a required reviewer approves the run.
 
 Until those workflows exist, applies are manual and local, and only for the milestone that introduced the configuration. Production approval is a required reviewer on the GitHub `production` environment.
 
@@ -215,7 +255,7 @@ Until Identity Center exists, the only emergency credential is the management-ac
 - [ ] 1. Root lockdown and repository scaffold
   - [x] Repository scaffold and hygiene
   - [ ] Management-account root lockdown ([checklist](docs/root-account-lockdown.md))
-- [ ] 2. S3 state backend bootstrap
+- [x] 2. S3 state backend bootstrap
 - [ ] 3. Pre-commit hooks (terraform fmt, tflint, gitleaks, checkov)
 - [ ] 4. Organizations and OUs module
 - [ ] 5. SCP guardrails module with tests
