@@ -151,8 +151,11 @@ Present:
 │   ├── dependabot.yml
 │   └── pull_request_template.md
 ├── .gitignore
+├── .pre-commit-config.yaml
+├── .tflint.hcl
 ├── bootstrap
 │   └── state-backend       # remote state bucket, KMS key, access logs
+├── CONTRIBUTING.md
 ├── docs
 │   └── root-account-lockdown.md
 ├── LICENSE
@@ -256,7 +259,7 @@ Until Identity Center exists, the only emergency credential is the management-ac
   - [x] Repository scaffold and hygiene
   - [ ] Management-account root lockdown ([checklist](docs/root-account-lockdown.md))
 - [x] 2. S3 state backend bootstrap
-- [ ] 3. Pre-commit hooks (terraform fmt, tflint, gitleaks, checkov)
+- [x] 3. Pre-commit hooks (terraform fmt, tflint, gitleaks, checkov)
 - [ ] 4. Organizations and OUs module
 - [ ] 5. SCP guardrails module with tests
 - [ ] 6. IAM Identity Center permission sets
@@ -267,6 +270,8 @@ Until Identity Center exists, the only emergency credential is the management-ac
 - [ ] 11. Finished README and threat model
 
 ## Working in this repo
+
+Install the local hooks before the first commit. [CONTRIBUTING.md](CONTRIBUTING.md) lists Terraform 1.10 or later, TFLint, Go (for the pinned Gitleaks build), and the `pre-commit install` / `pre-commit run --all-files` commands.
 
 Use the issue forms for bugs and for features or tasks. Pull requests follow [.github/pull_request_template.md](.github/pull_request_template.md). Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/). Report vulnerabilities through [SECURITY.md](SECURITY.md), not through a public issue.
 

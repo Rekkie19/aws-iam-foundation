@@ -1,0 +1,48 @@
+# Local hooks for this repository. Revs are release tags, not branches.
+# https://pre-commit.com
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-added-large-files
+      - id: check-merge-conflict
+      - id: detect-private-key
+      - id: check-yaml
+
+  - repo: https://github.com/antonbabenko/pre-commit-terraform
+    rev: v1.109.3
+    hooks:
+      - id: terraform_fmt
+      - id: terraform_validate
+        args:
+          # Validate without configuring a backend. This module has no
+          # committed backend block; -backend=false also ignores a local
+          # backend.tf left over from the state migration.
+          - --tf-init-args=-backend=false
+      - id: terraform_tflint
+        args:
+          # One config for every module. tflint --init reads it from the repo root.
+          - --args=--config=__GIT_WORKING_DIR__/.tflint.hcl
+
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      # Builds gitleaks v8.30.1. --no-git scans the working tree, so
+      # `pre-commit run --all-files` and a commit see the same files.
+      # The upstream entry only inspects the index (`gitleaks git --staged`).
+      - id: gitleaks
+        entry: gitleaks detect --no-git --source . --redact --no-banner
+
+  - repo: https://github.com/bridgecrewio/checkov.git
+    rev: "3.4.0"
+    hooks:
+      - id: checkov
+        args:
+          - --framework
+          - terraform
+          - --quiet
+          - --compact
+          - --skip-path
+          - .terraform
