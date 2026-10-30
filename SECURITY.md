@@ -46,4 +46,4 @@ No release is tagged yet. Security fixes land on the default branch.
 
 **Detection is delegated.** Organization CloudTrail, GuardDuty, and IAM Access Analyzer are delegated to the Security account once that milestone lands. A billing alarm is part of the same baseline so unexpected spend is visible.
 
-**State is protected.** The remote state backend is encrypted and versioned, blocks public access, and uses a lock. Plans are reviewed before apply.
+**State is protected.** The remote state backend is encrypted with a customer-managed key, versioned, and blocked from public access. Locking uses Terraform's S3 lockfile (`use_lockfile`). Plans are reviewed before apply.
