@@ -31,10 +31,11 @@ plan.out
 .terraformrc
 terraform.rc
 
-# Filled in after the bootstrap apply. backend.hcl contains the KMS key ARN,
-# which includes the account ID. The example files stay tracked.
+# Filled in from the state-backend outputs. backend.hcl contains the KMS key
+# ARN, which includes the account ID. The example files stay tracked.
 bootstrap/state-backend/backend.hcl
 bootstrap/state-backend/backend.tf
+organization/backend.hcl
 
 # Local secrets and cloud credentials
 .env
