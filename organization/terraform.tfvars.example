@@ -1,0 +1,11 @@
+# Copy to terraform.tfvars (gitignored). Replace the three addresses.
+# AWS sends account mail to them, and each one must be unused by any
+# existing AWS account. example.com is a documentation domain, not a mailbox.
+
+aws_region = "us-east-1"
+
+account_emails = {
+  security = "security@example.com"
+  dev      = "dev@example.com"
+  prod     = "prod@example.com"
+}

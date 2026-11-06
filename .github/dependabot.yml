@@ -36,3 +36,19 @@ updates:
       terraform:
         patterns:
           - "*"
+
+  - package-ecosystem: terraform
+    directory: /organization
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      terraform:
+        patterns:
+          - "*"

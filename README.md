@@ -4,7 +4,7 @@ Secure AWS identity foundation, built with Terraform and operated from this repo
 
 The design uses AWS Organizations, IAM Identity Center for people, and GitHub Actions OpenID Connect (OIDC) for automation. There are no IAM users and no long-lived access keys. Preventive guardrails are service control policies (SCPs). Detective controls (an organization CloudTrail, GuardDuty, and IAM Access Analyzer) are delegated to a Security account. Terraform state lives in an encrypted, versioned S3 backend with locking.
 
-Milestone 2 is the state-backend bootstrap in [`bootstrap/state-backend`](bootstrap/state-backend). It deploys only when you apply it. The organization, Identity Center, and guardrails are still ahead. The [roadmap](#roadmap) is the order of work. Complete the [root-account lockdown](docs/root-account-lockdown.md) before that apply.
+Milestone 2 is the state-backend bootstrap in [`bootstrap/state-backend`](bootstrap/state-backend). Milestone 4 is the organization root in [`organization`](organization). Both deploy only when you apply them. Identity Center and the guardrails are still ahead. The [roadmap](#roadmap) is the order of work. Complete the [root-account lockdown](docs/root-account-lockdown.md) before those applies.
 
 ## Target architecture
 
@@ -61,7 +61,7 @@ The state bucket is versioned, encrypted with a customer-managed key, and locked
 
 ## Architecture decisions
 
-These decisions are accepted for the design. Milestone 2 implements ADR-005. The others are still ahead.
+These decisions are accepted for the design. Milestone 2 implements ADR-005. Milestone 4 implements ADR-003 and ADR-007. The others are still ahead.
 
 ### ADR-001: People use Identity Center
 
@@ -74,6 +74,8 @@ Deploy roles trust GitHub's OIDC issuer. The `sub` claim is limited to this repo
 ### ADR-003: Three top-level OUs
 
 The organization has a Security OU, a Workloads-Dev OU, and a Workloads-Prod OU. The management account holds the organization, the SCPs, and IAM Identity Center. Application workloads go in the workload OUs. Security tooling is delegated to the Security account so a compromise of a workload account does not own the trail or the detectors.
+
+Milestone 4 creates that organization, the three OUs, and one member account in each OU: Security, Dev, and Prod. The management account already exists and stays in the organization root. Organizations cannot move it into an OU, and service control policies do not apply to it.
 
 ### ADR-004: SCPs are guardrails
 
@@ -90,6 +92,18 @@ The bootstrap root module is applied once with local state, then its own state c
 ### ADR-006: Detective controls live in the Security account
 
 Organization CloudTrail, GuardDuty, and IAM Access Analyzer use a delegated administrator in the Security account. A billing alarm watches estimated charges so a mistake during bootstrap is visible before the organization trail exists. The alarm is created by hand during root lockdown and codified in milestone 10.
+
+### ADR-007: Member accounts are created here and closed by hand
+
+The organization is a root module, [`organization`](organization), applied from the management account. State for it lives at `organization/terraform.tfstate` in the bootstrap bucket. This foundation has one organization, so the configuration is not a reusable module.
+
+Each member account is created with `iam_user_access_to_billing = DENY` and `role_name = OrganizationAccountAccessRole`. Billing stays in the management account. The role is the administrator Organizations pre-creates in the member so the management account can reach it until Identity Center permission sets exist. It is not a day-to-day login. Service control policies will still apply to that role. The role name and the billing setting are create-only, and the Organizations API does not return them, so Terraform will not plan a replacement when a later refresh cannot read them back.
+
+`close_on_deletion = false` and `lifecycle { prevent_destroy = true }` are set on the organization, every OU, and every member account. Removing an account from this configuration does not close it. Closing an account is a separate manual step in the management account, after that account is empty of workloads.
+
+Account creation is serialized, and each account may take many minutes. The resource timeout is 60 minutes. Email addresses are required sensitive variables with no defaults.
+
+The organization uses feature set `ALL` and enables service control policies and tag policies. Trusted access is turned on for CloudTrail, GuardDuty, IAM Identity Center, IAM Access Analyzer, and AWS Config. That switch does not create a trail, a detector, an analyzer, a recorder, or an Identity Center instance. Those remain later milestones. Tag policies are enabled so one can be attached later; until a policy is attached, nothing is enforced.
 
 ## Security model
 
@@ -159,6 +173,7 @@ Present:
 ├── docs
 │   └── root-account-lockdown.md
 ├── LICENSE
+├── organization            # organization, OUs, and member accounts
 ├── README.md
 └── SECURITY.md
 ```
@@ -167,13 +182,12 @@ Planned, and created by the milestone that fills them:
 
 ```text
 modules/
-  organizations/            # organization and OUs
   scp/                      # guardrail policies and tests
   identity-center/          # permission sets
   github-oidc/              # OIDC provider and deploy roles
   security-baseline/        # CloudTrail, GuardDuty, Access Analyzer, billing alarm
 envs/
-  management/               # org, SCPs, Identity Center, OIDC
+  management/               # SCPs, Identity Center, OIDC
   security/                 # delegated security services
 docs/                       # this lockdown checklist, then ADRs and the threat model
 .github/workflows/          # pull-request plan and security scans
@@ -188,11 +202,12 @@ docs/                       # this lockdown checklist, then ADRs and the threat 
 - Two phishing-resistant MFA devices for root (FIDO2 security keys or passkeys), stored apart from each other.
 - A password manager for the root password.
 - Terraform 1.10 or later (the S3 lockfile needs it), AWS CLI v2, and Git.
-- An SSO session or assumed-role admin profile for the bootstrap apply. The root user is the wrong credential for that apply.
+- An SSO session or assumed-role admin profile for applies from the management account. The root user is the wrong credential for those applies.
+- Three email addresses that can receive mail and are not already AWS accounts, one each for Security, Dev, and Prod.
 - Admin access to this GitHub repository, so later milestones can add the OIDC trust, the `production` environment, and branch protection.
 - No IAM user and no access keys. Do not create either one to unblock Terraform.
 
-Identity Center arrives in a later milestone. The state-backend bootstrap uses a short-lived management-account session.
+Identity Center arrives in a later milestone. The state-backend and organization applies use a short-lived management-account session.
 
 ## Deployment
 
@@ -231,7 +246,26 @@ rm -f terraform.tfstate terraform.tfstate.backup tfplan
 
 `backend.hcl` contains the KMS key ARN, and that ARN contains the account ID. It is gitignored. Keep it in a password manager, not in a pull request. Later root modules copy [backend.hcl.example](bootstrap/state-backend/backend.hcl.example) and set their own `key`.
 
-### After the backend exists
+### Create the organization
+
+After the state bucket exists, apply the organization from the management account with the same kind of SSO session or assumed-role admin profile. Account creation is slow, and this module will not close an account. The module README has the timeout, the role, and the closure notes: [organization/README.md](organization/README.md).
+
+```bash
+export AWS_PROFILE=your-admin-profile
+cd organization
+cp terraform.tfvars.example terraform.tfvars
+cp backend.hcl.example backend.hcl
+```
+
+Edit `terraform.tfvars` with three unique email addresses. Edit `backend.hcl` from the state-backend outputs and keep the key `organization/terraform.tfstate`.
+
+```bash
+terraform init -backend-config=backend.hcl
+terraform plan -out=tfplan
+terraform apply tfplan
+```
+
+### Later milestones
 
 1. Open pull requests for each milestone. Review the plan in the pull request. Do not paste secrets, account IDs, or state into the discussion.
 2. Apply non-production changes from the dev deploy role after the OIDC role exists.
@@ -251,7 +285,7 @@ Milestone 11 replaces this section with the real procedure. That write-up will d
 - How the session is identified in CloudTrail afterward.
 - How credentials are rotated and how the incident is closed.
 
-Until Identity Center exists, the only emergency credential is the management-account root user. Use it only for tasks that require root, then sign out. The lockdown checklist is the control on that credential. Milestone 2 applies the state backend with a separate short-lived management-account session. Later applies move to the Identity Center permission sets and the OIDC deploy roles.
+Until Identity Center exists, the only emergency credential is the management-account root user. Use it only for tasks that require root, then sign out. The lockdown checklist is the control on that credential. Milestones 2 and 4 apply with a separate short-lived management-account session. Later applies move to the Identity Center permission sets and the OIDC deploy roles.
 
 ## Roadmap
 
@@ -260,7 +294,7 @@ Until Identity Center exists, the only emergency credential is the management-ac
   - [ ] Management-account root lockdown ([checklist](docs/root-account-lockdown.md))
 - [x] 2. S3 state backend bootstrap
 - [x] 3. Pre-commit hooks (terraform fmt, tflint, gitleaks, checkov)
-- [ ] 4. Organizations and OUs module
+- [x] 4. Organizations and OUs module
 - [ ] 5. SCP guardrails module with tests
 - [ ] 6. IAM Identity Center permission sets
 - [ ] 7. GitHub OIDC provider and scoped dev deploy role
