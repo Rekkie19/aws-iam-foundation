@@ -36,6 +36,7 @@ terraform.rc
 bootstrap/state-backend/backend.hcl
 bootstrap/state-backend/backend.tf
 organization/backend.hcl
+scps/backend.hcl
 
 # Local secrets and cloud credentials
 .env

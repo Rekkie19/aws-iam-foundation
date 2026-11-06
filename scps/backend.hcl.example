@@ -1,0 +1,14 @@
+# Partial S3 backend configuration.
+#
+# Copy to backend.hcl (gitignored). Set bucket, region, and kms_key_id from
+# the state-backend outputs. The key ARN contains the account ID. Do not
+# commit backend.hcl.
+#
+#   terraform init -backend-config=backend.hcl
+
+bucket       = "NAME_PREFIX-tfstate"
+key          = "scps/terraform.tfstate"
+region       = "us-east-1"
+encrypt      = true
+kms_key_id   = "arn:aws:kms:REGION:ACCOUNT_ID:key/KEY_ID"
+use_lockfile = true

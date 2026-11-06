@@ -1,0 +1,19 @@
+# Copy to terraform.tfvars (gitignored). Replace the OU id from
+# `terraform output organizational_unit_ids` in organization/.
+# The role ARN below is a pattern, not a real account. aws:PrincipalArn
+# matches the IAM role ARN, not an arn:aws:sts:: assumed-role session ARN.
+
+aws_region = "us-east-1"
+
+allowed_regions = ["us-east-1"]
+
+exempt_principal_arns = [
+  "arn:aws:iam::*:role/BreakGlass",
+]
+
+# First attachment: Workloads-Dev only. Add security and workloads_prod
+# after a deny has been confirmed in Dev. An empty map creates the four
+# policies and attaches them nowhere.
+attach_ou_ids = {
+  workloads_dev = "ou-dev0-example1"
+}
