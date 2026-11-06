@@ -4,7 +4,7 @@ Secure AWS identity foundation, built with Terraform and operated from this repo
 
 The design uses AWS Organizations, IAM Identity Center for people, and GitHub Actions OpenID Connect (OIDC) for automation. There are no IAM users and no long-lived access keys. Preventive guardrails are service control policies (SCPs). Detective controls (an organization CloudTrail, GuardDuty, and IAM Access Analyzer) are delegated to a Security account. Terraform state lives in an encrypted, versioned S3 backend with locking.
 
-Milestone 2 is the state-backend bootstrap in [`bootstrap/state-backend`](bootstrap/state-backend). Milestone 4 is the organization root in [`organization`](organization). Both deploy only when you apply them. Identity Center and the guardrails are still ahead. The [roadmap](#roadmap) is the order of work. Complete the [root-account lockdown](docs/root-account-lockdown.md) before those applies.
+Milestone 2 is the state-backend bootstrap in [`bootstrap/state-backend`](bootstrap/state-backend). Milestone 4 is the organization root in [`organization`](organization). Milestone 5 is the service control policies in [`scps`](scps). They deploy only when you apply them. Identity Center is still ahead. The [roadmap](#roadmap) is the order of work. Complete the [root-account lockdown](docs/root-account-lockdown.md) before those applies.
 
 ## Target architecture
 
@@ -61,7 +61,7 @@ The state bucket is versioned, encrypted with a customer-managed key, and locked
 
 ## Architecture decisions
 
-These decisions are accepted for the design. Milestone 2 implements ADR-005. Milestone 4 implements ADR-003 and ADR-007. The others are still ahead.
+These decisions are accepted for the design. Milestone 2 implements ADR-005. Milestone 4 implements ADR-003 and ADR-007. Milestone 5 implements ADR-004 and ADR-008. The others are still ahead.
 
 ### ADR-001: People use Identity Center
 
@@ -79,7 +79,7 @@ Milestone 4 creates that organization, the three OUs, and one member account in 
 
 ### ADR-004: SCPs are guardrails
 
-SCPs deny classes of action that the foundation must prevent (for example disabling the trail, leaving the organization, or weakening the account baseline). Access is granted only by identity-based policies and permission sets, which stay least privilege. Exceptions are explicit, reviewed, and covered by tests.
+SCPs deny classes of action that the foundation must prevent (for example disabling the trail, leaving the organization, or weakening the account baseline). Access is granted only by identity-based policies and permission sets, which stay least privilege. Exceptions are explicit, reviewed, and covered by tests. Milestone 5 is the deny set, attached to OUs and covered by `terraform test`.
 
 ### ADR-005: Remote state is encrypted, versioned, and locked with an S3 lockfile
 
@@ -104,6 +104,16 @@ Each member account is created with `iam_user_access_to_billing = DENY` and `rol
 Account creation is serialized, and each account may take many minutes. The resource timeout is 60 minutes. Email addresses are required sensitive variables with no defaults.
 
 The organization uses feature set `ALL` and enables service control policies and tag policies. Trusted access is turned on for CloudTrail, GuardDuty, IAM Identity Center, IAM Access Analyzer, and AWS Config. That switch does not create a trail, a detector, an analyzer, a recorder, or an Identity Center instance. Those remain later milestones. Tag policies are enabled so one can be attached later; until a policy is attached, nothing is enforced.
+
+### ADR-008: Guardrails are a separate root, attached to OUs, and tested offline
+
+Service control policies live in [`scps`](scps), not in the organization root. Account and OU creation is protected with `prevent_destroy`. Policy text will change more often than the account layout, and a bad policy plan must not share state with those accounts. OU ids are variables, copied from the organization outputs. `terraform_remote_state` would require the state bucket and credentials before a plan, which would make the offline tests depend on AWS.
+
+Attachments target organizational units only. The first apply targets Workloads-Dev. Security and Workloads-Prod are added after a deny has been confirmed there. The variable check rejects the organization root and account ids. SCPs do not apply to the management account; attaching these policies to the root would still hit every member account at once, so this module does not do that. `FullAWSAccess` stays on the root. These policies only add denies.
+
+Each document is refused above 5120 characters, which is the quota these policies were written for. AWS raised the published quota to 10240 characters in May 2026. The smaller ceiling stays so a guardrail remains reviewable. The exempt principal list applies only to the region restriction and to changes that disable CloudTrail, GuardDuty, AWS Config, or IAM Access Analyzer. Leaving the organization, creating IAM users or access keys, calling AWS as root, and writing a public S3 ACL have no exemption. The exemption is an IAM role ARN. This module does not create that role.
+
+`DeletePublicAccessBlock` uses the same IAM action as enabling Block Public Access, and an SCP cannot see the booleans. The S3 statement denies public canned ACLs and public grant headers instead of that action. Policy text is `jsonencode`, not an `aws_iam_policy_document` data source, because the offline test mocks the AWS provider and that mock would hide the document.
 
 ## Security model
 
@@ -175,6 +185,7 @@ Present:
 ├── LICENSE
 ├── organization            # organization, OUs, and member accounts
 ├── README.md
+├── scps                    # SCP guardrails and offline tests
 └── SECURITY.md
 ```
 
@@ -182,12 +193,11 @@ Planned, and created by the milestone that fills them:
 
 ```text
 modules/
-  scp/                      # guardrail policies and tests
   identity-center/          # permission sets
   github-oidc/              # OIDC provider and deploy roles
   security-baseline/        # CloudTrail, GuardDuty, Access Analyzer, billing alarm
 envs/
-  management/               # SCPs, Identity Center, OIDC
+  management/               # Identity Center, OIDC
   security/                 # delegated security services
 docs/                       # this lockdown checklist, then ADRs and the threat model
 .github/workflows/          # pull-request plan and security scans
@@ -265,6 +275,29 @@ terraform plan -out=tfplan
 terraform apply tfplan
 ```
 
+### Attach the guardrails
+
+After the organization exists, attach the service control policies from the management account with the same kind of session. The first attachment is Workloads-Dev only. The module README has the policy list, the 5120-character ceiling, and the rollout: [scps/README.md](scps/README.md).
+
+```bash
+export AWS_PROFILE=your-admin-profile
+cd scps
+cp terraform.tfvars.example terraform.tfvars
+cp backend.hcl.example backend.hcl
+```
+
+Edit `terraform.tfvars`. Set `allowed_regions`, and set `attach_ou_ids.workloads_dev` from `terraform -chdir=../organization output organizational_unit_ids`. Edit `backend.hcl` from the state-backend outputs and keep the key `scps/terraform.tfstate`.
+
+```bash
+terraform init -backend=false
+terraform test
+terraform init -backend-config=backend.hcl
+terraform plan -out=tfplan
+terraform apply tfplan
+```
+
+`terraform test` does not need AWS. Run it before the plan.
+
 ### Later milestones
 
 1. Open pull requests for each milestone. Review the plan in the pull request. Do not paste secrets, account IDs, or state into the discussion.
@@ -275,7 +308,7 @@ Until those workflows exist, applies are manual and local, and only for the mile
 
 ## Break-glass procedure
 
-This procedure is a placeholder. It is not operational, and there is no break-glass role yet.
+This procedure is a placeholder. It is not operational, and there is no break-glass role yet. Milestone 5 can exempt an IAM role ARN from the region restriction and from the security-service deny. That role is not created here.
 
 Milestone 11 replaces this section with the real procedure. That write-up will define:
 
@@ -295,7 +328,7 @@ Until Identity Center exists, the only emergency credential is the management-ac
 - [x] 2. S3 state backend bootstrap
 - [x] 3. Pre-commit hooks (terraform fmt, tflint, gitleaks, checkov)
 - [x] 4. Organizations and OUs module
-- [ ] 5. SCP guardrails module with tests
+- [x] 5. SCP guardrails module with tests
 - [ ] 6. IAM Identity Center permission sets
 - [ ] 7. GitHub OIDC provider and scoped dev deploy role
 - [ ] 8. Pull-request CI workflow running plan and security scans
