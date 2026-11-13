@@ -37,6 +37,7 @@ bootstrap/state-backend/backend.hcl
 bootstrap/state-backend/backend.tf
 organization/backend.hcl
 scps/backend.hcl
+identity-center/backend.hcl
 
 # Local secrets and cloud credentials
 .env

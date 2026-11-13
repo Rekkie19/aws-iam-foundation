@@ -4,7 +4,7 @@ Secure AWS identity foundation, built with Terraform and operated from this repo
 
 The design uses AWS Organizations, IAM Identity Center for people, and GitHub Actions OpenID Connect (OIDC) for automation. There are no IAM users and no long-lived access keys. Preventive guardrails are service control policies (SCPs). Detective controls (an organization CloudTrail, GuardDuty, and IAM Access Analyzer) are delegated to a Security account. Terraform state lives in an encrypted, versioned S3 backend with locking.
 
-Milestone 2 is the state-backend bootstrap in [`bootstrap/state-backend`](bootstrap/state-backend). Milestone 4 is the organization root in [`organization`](organization). Milestone 5 is the service control policies in [`scps`](scps). They deploy only when you apply them. Identity Center is still ahead. The [roadmap](#roadmap) is the order of work. Complete the [root-account lockdown](docs/root-account-lockdown.md) before those applies.
+Milestone 2 is the state-backend bootstrap in [`bootstrap/state-backend`](bootstrap/state-backend). Milestone 4 is the organization root in [`organization`](organization). Milestone 5 is the service control policies in [`scps`](scps). Milestone 6 is IAM Identity Center in [`identity-center`](identity-center). They deploy only when you apply them. The [roadmap](#roadmap) is the order of work. Complete the [root-account lockdown](docs/root-account-lockdown.md) before those applies.
 
 ## Target architecture
 
@@ -61,7 +61,7 @@ The state bucket is versioned, encrypted with a customer-managed key, and locked
 
 ## Architecture decisions
 
-These decisions are accepted for the design. Milestone 2 implements ADR-005. Milestone 4 implements ADR-003 and ADR-007. Milestone 5 implements ADR-004 and ADR-008. The others are still ahead.
+These decisions are accepted for the design. Milestone 2 implements ADR-005. Milestone 4 implements ADR-003 and ADR-007. Milestone 5 implements ADR-004 and ADR-008. Milestone 6 implements ADR-009. The others are still ahead.
 
 ### ADR-001: People use Identity Center
 
@@ -114,6 +114,18 @@ Attachments target organizational units only. The first apply targets Workloads-
 Each document is refused above 5120 characters, which is the quota these policies were written for. AWS raised the published quota to 10240 characters in May 2026. The smaller ceiling stays so a guardrail remains reviewable. The exempt principal list applies only to the region restriction and to changes that disable CloudTrail, GuardDuty, AWS Config, or IAM Access Analyzer. Leaving the organization, creating IAM users or access keys, calling AWS as root, and writing a public S3 ACL have no exemption. The exemption is an IAM role ARN. This module does not create that role.
 
 `DeletePublicAccessBlock` uses the same IAM action as enabling Block Public Access, and an SCP cannot see the booleans. The S3 statement denies public canned ACLs and public grant headers instead of that action. Policy text is `jsonencode`, not an `aws_iam_policy_document` data source, because the offline test mocks the AWS provider and that mock would hide the document.
+
+### ADR-009: Four permission sets, short Admin sessions, group assignments
+
+People receive access from IAM Identity Center permission sets, not from IAM users. The instance already exists. [`identity-center`](identity-center) reads it and does not create a second one. It does not create users. Membership stays in the directory. Terraform assigns groups.
+
+There are four sets. Admin is `AdministratorAccess` for one hour, for the management account and for break-glass. ReadOnly is `ReadOnlyAccess` for four hours. SecurityAudit is the `SecurityAudit` managed policy plus `ReadOnlyAccess`, also four hours, for the Security account. DevPowerUser is `PowerUserAccess` for four hours, and only in workload accounts. A plan that assigns DevPowerUser in the management account fails. Four hours is a working session. One hour is the longest standing AdministratorAccess session this foundation will grant. None of them is a twelve-hour session.
+
+ReadOnlyAccess can read data. ViewOnlyAccess is the tighter console-only alternative and is documented on the root, not attached.
+
+DevPowerUser carries a customer-managed permissions boundary, `DevPowerUserBoundary`, referenced by name. The policy has to exist in the target account before the assignment. The JSON document allows the ceiling a boundary needs, then denies IAM users and keys, organization changes, the same security-service disable actions as the SCPs, and changes to the boundary or to a role that does not wear it. The document uses an account wildcard, not an account ID. The optional module under `identity-center/modules/dev-power-user-boundary` creates that policy in one account.
+
+MFA is required on every sign-in, with authenticator apps or security keys. That control lives in the Identity Center console. This module does not pretend to set it.
 
 ## Security model
 
@@ -182,6 +194,7 @@ Present:
 ├── CONTRIBUTING.md
 ├── docs
 │   └── root-account-lockdown.md
+├── identity-center         # permission sets, groups, and assignments
 ├── LICENSE
 ├── organization            # organization, OUs, and member accounts
 ├── README.md
@@ -193,11 +206,10 @@ Planned, and created by the milestone that fills them:
 
 ```text
 modules/
-  identity-center/          # permission sets
   github-oidc/              # OIDC provider and deploy roles
   security-baseline/        # CloudTrail, GuardDuty, Access Analyzer, billing alarm
 envs/
-  management/               # Identity Center, OIDC
+  management/               # OIDC
   security/                 # delegated security services
 docs/                       # this lockdown checklist, then ADRs and the threat model
 .github/workflows/          # pull-request plan and security scans
@@ -298,6 +310,27 @@ terraform apply tfplan
 
 `terraform test` does not need AWS. Run it before the plan.
 
+### Assign permission sets
+
+After the organization and the Dev SCP attachment exist, create the Identity Center instance in the console if it is not already there, set MFA, and apply the DevPowerUser boundary in each workload account that will receive that set. Then apply this root from the management account or the delegated admin account. The module README has the sets, the boundary, and the MFA settings: [identity-center/README.md](identity-center/README.md).
+
+```bash
+export AWS_PROFILE=your-admin-profile
+cd identity-center
+cp terraform.tfvars.example terraform.tfvars
+cp backend.hcl.example backend.hcl
+```
+
+Edit `terraform.tfvars`. Replace the placeholder account ids. Edit `backend.hcl` from the state-backend outputs and keep the key `identity-center/terraform.tfstate`.
+
+```bash
+terraform init -backend=false
+terraform test
+terraform init -backend-config=backend.hcl
+terraform plan -out=tfplan
+terraform apply tfplan
+```
+
 ### Later milestones
 
 1. Open pull requests for each milestone. Review the plan in the pull request. Do not paste secrets, account IDs, or state into the discussion.
@@ -308,7 +341,7 @@ Until those workflows exist, applies are manual and local, and only for the mile
 
 ## Break-glass procedure
 
-This procedure is a placeholder. It is not operational, and there is no break-glass role yet. Milestone 5 can exempt an IAM role ARN from the region restriction and from the security-service deny. That role is not created here.
+This procedure is a placeholder. It is not operational, and there is no break-glass role yet. Milestone 5 can exempt an IAM role ARN from the region restriction and from the security-service deny. That role is not created here. Milestone 6 adds a one-hour Admin permission set for management and break-glass use. The console MFA requirement and the rest of this procedure are still ahead.
 
 Milestone 11 replaces this section with the real procedure. That write-up will define:
 
@@ -329,7 +362,7 @@ Until Identity Center exists, the only emergency credential is the management-ac
 - [x] 3. Pre-commit hooks (terraform fmt, tflint, gitleaks, checkov)
 - [x] 4. Organizations and OUs module
 - [x] 5. SCP guardrails module with tests
-- [ ] 6. IAM Identity Center permission sets
+- [x] 6. IAM Identity Center permission sets
 - [ ] 7. GitHub OIDC provider and scoped dev deploy role
 - [ ] 8. Pull-request CI workflow running plan and security scans
 - [ ] 9. Prod role and approval-gated `production` environment
