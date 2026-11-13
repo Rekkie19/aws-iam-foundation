@@ -54,6 +54,38 @@ updates:
           - "*"
 
   - package-ecosystem: terraform
+    directory: /identity-center
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      terraform:
+        patterns:
+          - "*"
+
+  - package-ecosystem: terraform
+    directory: /identity-center/modules/dev-power-user-boundary
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      terraform:
+        patterns:
+          - "*"
+
+  - package-ecosystem: terraform
     directory: /organization
     schedule:
       interval: weekly
