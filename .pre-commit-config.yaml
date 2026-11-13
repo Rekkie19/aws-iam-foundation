@@ -46,3 +46,6 @@ repos:
           - --compact
           - --skip-path
           - .terraform
+          # Checkov 3.4.0 cannot parse Terraform test files.
+          - --skip-path
+          - scps/tests
