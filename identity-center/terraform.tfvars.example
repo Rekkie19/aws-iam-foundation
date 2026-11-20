@@ -1,0 +1,41 @@
+# Copy to terraform.tfvars (gitignored). Replace every 12-digit value.
+# 111111111111, 222222222222, and 333333333333 are placeholders, not accounts.
+
+aws_region = "us-east-1"
+
+# Identity Center home region. The instance must already exist there.
+management_account_id = "111111111111"
+
+# false looks groups up by display name. true creates them. Users are never created.
+create_groups = false
+
+# relay_state = "https://example.com/"
+
+dev_power_user_boundary_name = "DevPowerUserBoundary"
+
+assignments = {
+  Placeholder-BreakGlass = [
+    {
+      permission_set = "Admin"
+      account_id     = "111111111111"
+    }
+  ]
+  Placeholder-Readers = [
+    {
+      permission_set = "ReadOnly"
+      account_id     = "222222222222"
+    }
+  ]
+  Placeholder-Security = [
+    {
+      permission_set = "SecurityAudit"
+      account_id     = "333333333333"
+    }
+  ]
+  Placeholder-Dev = [
+    {
+      permission_set = "DevPowerUser"
+      account_id     = "222222222222"
+    }
+  ]
+}

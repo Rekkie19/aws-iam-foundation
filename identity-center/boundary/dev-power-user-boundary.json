@@ -1,0 +1,141 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowWithinBoundary",
+      "Effect": "Allow",
+      "Action": "*",
+      "Resource": "*"
+    },
+    {
+      "Sid": "DenyIamUsersAndKeys",
+      "Effect": "Deny",
+      "Action": [
+        "iam:CreateAccessKey",
+        "iam:CreateLoginProfile",
+        "iam:CreateUser",
+        "iam:UpdateLoginProfile"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "DenyOrganizationChanges",
+      "Effect": "Deny",
+      "Action": [
+        "organizations:AttachPolicy",
+        "organizations:CloseAccount",
+        "organizations:CreateAccount",
+        "organizations:CreateOrganizationalUnit",
+        "organizations:CreatePolicy",
+        "organizations:DeleteOrganizationalUnit",
+        "organizations:DeletePolicy",
+        "organizations:DeregisterDelegatedAdministrator",
+        "organizations:DetachPolicy",
+        "organizations:DisableAWSServiceAccess",
+        "organizations:DisablePolicyType",
+        "organizations:EnableAWSServiceAccess",
+        "organizations:EnablePolicyType",
+        "organizations:InviteAccountToOrganization",
+        "organizations:LeaveOrganization",
+        "organizations:MoveAccount",
+        "organizations:RegisterDelegatedAdministrator",
+        "organizations:RemoveAccountFromOrganization",
+        "organizations:UpdateOrganizationalUnit",
+        "organizations:UpdatePolicy"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "DenyDisableSecurityServices",
+      "Effect": "Deny",
+      "Action": [
+        "access-analyzer:DeleteAnalyzer",
+        "cloudtrail:DeleteEventDataStore",
+        "cloudtrail:DeleteTrail",
+        "cloudtrail:PutEventSelectors",
+        "cloudtrail:PutInsightSelectors",
+        "cloudtrail:StopEventDataStoreIngestion",
+        "cloudtrail:StopLogging",
+        "cloudtrail:UpdateEventDataStore",
+        "cloudtrail:UpdateTrail",
+        "config:DeleteConfigRule",
+        "config:DeleteConfigurationAggregator",
+        "config:DeleteConfigurationRecorder",
+        "config:DeleteDeliveryChannel",
+        "config:DeleteOrganizationConfigRule",
+        "config:DeleteOrganizationConformancePack",
+        "config:DeleteRetentionConfiguration",
+        "config:PutConfigurationRecorder",
+        "config:StopConfigurationRecorder",
+        "guardduty:DeleteDetector",
+        "guardduty:DeleteMembers",
+        "guardduty:DeletePublishingDestination",
+        "guardduty:DisableOrganizationAdminAccount",
+        "guardduty:DisassociateFromMasterAccount",
+        "guardduty:DisassociateMembers",
+        "guardduty:StopMonitoringMembers",
+        "guardduty:UpdateDetector",
+        "guardduty:UpdateOrganizationConfiguration"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "DenyBoundaryPolicyEdits",
+      "Effect": "Deny",
+      "Action": [
+        "iam:CreatePolicyVersion",
+        "iam:DeletePolicy",
+        "iam:DeletePolicyVersion",
+        "iam:SetDefaultPolicyVersion"
+      ],
+      "Resource": "arn:aws:iam::*:policy/DevPowerUserBoundary"
+    },
+    {
+      "Sid": "DenyBoundarySwap",
+      "Effect": "Deny",
+      "Action": [
+        "iam:DeleteRolePermissionsBoundary",
+        "iam:DeleteUserPermissionsBoundary",
+        "iam:PutRolePermissionsBoundary",
+        "iam:PutUserPermissionsBoundary"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "DenyRoleWithoutThisBoundary",
+      "Effect": "Deny",
+      "Action": [
+        "iam:AttachRolePolicy",
+        "iam:CreateRole",
+        "iam:DeleteRolePolicy",
+        "iam:DetachRolePolicy",
+        "iam:PassRole",
+        "iam:PutRolePolicy"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringNotEquals": {
+          "iam:PermissionsBoundary": "arn:aws:iam::*:policy/DevPowerUserBoundary"
+        }
+      }
+    },
+    {
+      "Sid": "DenyRoleWhenBoundaryMissing",
+      "Effect": "Deny",
+      "Action": [
+        "iam:AttachRolePolicy",
+        "iam:CreateRole",
+        "iam:DeleteRolePolicy",
+        "iam:DetachRolePolicy",
+        "iam:PassRole",
+        "iam:PutRolePolicy"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "Null": {
+          "iam:PermissionsBoundary": "true"
+        }
+      }
+    }
+  ]
+}
