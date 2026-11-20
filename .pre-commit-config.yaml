@@ -51,3 +51,5 @@ repos:
           - scps/tests
           - --skip-path
           - identity-center/tests
+          - --skip-path
+          - github-oidc/tests
