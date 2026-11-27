@@ -1,0 +1,290 @@
+# Static pull-request CI. No AWS credentials, no OIDC, no repository secrets.
+# pull_request, not pull_request_target: the merge commit runs with a
+# read-only token. See ADR-011.
+
+name: pr-ci
+
+"on":
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fmt:
+    name: fmt
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c # v2.23.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: 1.17.2
+          terraform_wrapper: false
+
+      - name: terraform fmt
+        shell: bash
+        run: terraform fmt -check -recursive
+
+  terraform:
+    name: terraform (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: state-backend
+            root: bootstrap/state-backend
+            test: false
+          - name: organization
+            root: organization
+            test: false
+          - name: scps
+            root: scps
+            test: true
+          - name: identity-center
+            root: identity-center
+            test: true
+          - name: dev-power-user-boundary
+            root: identity-center/modules/dev-power-user-boundary
+            test: false
+          - name: github-oidc
+            root: github-oidc
+            test: true
+          - name: gha-dev-boundary
+            root: github-oidc/modules/gha-dev-boundary
+            test: false
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ matrix.root }}
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c # v2.23.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: 1.17.2
+          terraform_wrapper: false
+
+      - name: Set up TFLint
+        uses: terraform-linters/setup-tflint@6ffdbaa3be476b3431f7275c26966ef32ff60337 # v6.3.2
+        with:
+          tflint_version: v0.66.0
+
+      - name: terraform fmt
+        run: terraform fmt -check -recursive
+
+      - name: terraform init
+        run: terraform init -backend=false -input=false
+
+      - name: terraform validate
+        run: terraform validate -no-color
+
+      # github.token is the automatic workflow token, not a repository secret.
+      # tflint --init uses it only to download the public AWS ruleset.
+      - name: tflint
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tflint --init --config "${GITHUB_WORKSPACE}/.tflint.hcl"
+          tflint --config "${GITHUB_WORKSPACE}/.tflint.hcl"
+
+      - name: terraform test
+        if: ${{ matrix.test }}
+        run: terraform test -no-color
+
+  gitleaks:
+    name: gitleaks
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c # v2.23.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: gitleaks
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="8.30.1"
+          checksum="551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
+          tmpdir="$(mktemp -d)"
+          archive="${tmpdir}/gitleaks.tar.gz"
+          curl -fsSL -o "${archive}" "https://github.com/gitleaks/gitleaks/releases/download/v${version}/gitleaks_${version}_linux_x64.tar.gz"
+          echo "${checksum}  ${archive}" | sha256sum -c -
+          tar -xzf "${archive}" -C "${tmpdir}" gitleaks
+          install -m 0755 "${tmpdir}/gitleaks" "${HOME}/.local/bin/gitleaks"
+          export PATH="${HOME}/.local/bin:${PATH}"
+          gitleaks detect --redact --no-banner
+
+  checkov:
+    name: checkov
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c # v2.23.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+
+      - name: checkov
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check "checkov==3.4.0"
+          checkov \
+            --directory . \
+            --framework terraform \
+            --compact \
+            --skip-path .terraform \
+            --skip-path scps/tests \
+            --skip-path identity-center/tests \
+            --skip-path github-oidc/tests \
+            --output cli \
+            --output sarif \
+            --output-file-path "console,${RUNNER_TEMP}/checkov.sarif"
+
+      # Fork pull requests do not receive security-events: write.
+      # Checkov has already failed the job if it found a problem.
+      - name: Upload Checkov SARIF
+        if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+        uses: github/codeql-action/upload-sarif@915412ff23e8b7659517e607487dbeae018f2934 # v4.39.5
+        with:
+          sarif_file: ${{ runner.temp }}/checkov.sarif
+          category: checkov
+
+  trivy:
+    name: trivy
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c # v2.23.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: trivy config
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: config
+          scan-ref: .
+          exit-code: "1"
+          severity: UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
+          skip-dirs: .terraform
+          version: v0.70.0
+          cache: "false"
+
+  actionlint:
+    name: actionlint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c # v2.23.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: actionlint
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="1.7.12"
+          checksum="8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8"
+          tmpdir="$(mktemp -d)"
+          archive="${tmpdir}/actionlint.tar.gz"
+          curl -fsSL -o "${archive}" "https://github.com/rhysd/actionlint/releases/download/v${version}/actionlint_${version}_linux_amd64.tar.gz"
+          echo "${checksum}  ${archive}" | sha256sum -c -
+          tar -xzf "${archive}" -C "${tmpdir}" actionlint
+          install -m 0755 "${tmpdir}/actionlint" "${HOME}/.local/bin/actionlint"
+          export PATH="${HOME}/.local/bin:${PATH}"
+          actionlint
+
+  zizmor:
+    name: zizmor
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c # v2.23.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: zizmor
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="1.33.1"
+          checksum="3e6a301c7a820a2501915f5a9de8c0486da82bdec7965f068477538a98743d43"
+          tmpdir="$(mktemp -d)"
+          archive="${tmpdir}/zizmor.tar.gz"
+          curl -fsSL -o "${archive}" "https://github.com/zizmorcore/zizmor/releases/download/v${version}/zizmor-x86_64-unknown-linux-gnu.tar.gz"
+          echo "${checksum}  ${archive}" | sha256sum -c -
+          tar -xzf "${archive}" -C "${tmpdir}" zizmor
+          install -m 0755 "${tmpdir}/zizmor" "${HOME}/.local/bin/zizmor"
+          export PATH="${HOME}/.local/bin:${PATH}"
+          zizmor --offline .github/workflows

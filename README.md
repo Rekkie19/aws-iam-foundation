@@ -4,7 +4,7 @@ Secure AWS identity foundation, built with Terraform and operated from this repo
 
 The design uses AWS Organizations, IAM Identity Center for people, and GitHub Actions OpenID Connect (OIDC) for automation. There are no IAM users and no long-lived access keys. Preventive guardrails are service control policies (SCPs). Detective controls (an organization CloudTrail, GuardDuty, and IAM Access Analyzer) are delegated to a Security account. Terraform state lives in an encrypted, versioned S3 backend with locking.
 
-Milestone 2 is the state-backend bootstrap in [`bootstrap/state-backend`](bootstrap/state-backend). Milestone 4 is the organization root in [`organization`](organization). Milestone 5 is the service control policies in [`scps`](scps). Milestone 6 is IAM Identity Center in [`identity-center`](identity-center). Milestone 7 is the GitHub Actions OIDC provider and the dev plan and deploy roles in [`github-oidc`](github-oidc). They deploy only when you apply them. The [roadmap](#roadmap) is the order of work. Complete the [root-account lockdown](docs/root-account-lockdown.md) before those applies.
+Milestone 2 is the state-backend bootstrap in [`bootstrap/state-backend`](bootstrap/state-backend). Milestone 4 is the organization root in [`organization`](organization). Milestone 5 is the service control policies in [`scps`](scps). Milestone 6 is IAM Identity Center in [`identity-center`](identity-center). Milestone 7 is the GitHub Actions OIDC provider and the dev plan and deploy roles in [`github-oidc`](github-oidc). Milestone 8 is the static pull-request workflow in [`.github/workflows/pr-ci.yml`](.github/workflows/pr-ci.yml). The Terraform roots deploy only when you apply them. The workflow does not. The [roadmap](#roadmap) is the order of work. Complete the [root-account lockdown](docs/root-account-lockdown.md) before those applies.
 
 ## Target architecture
 
@@ -61,7 +61,7 @@ The state bucket is versioned, encrypted with a customer-managed key, and locked
 
 ## Architecture decisions
 
-These decisions are accepted for the design. Milestone 2 implements ADR-005. Milestone 4 implements ADR-003 and ADR-007. Milestone 5 implements ADR-004 and ADR-008. Milestone 6 implements ADR-009. Milestone 7 implements ADR-010. The others are still ahead.
+These decisions are accepted for the design. Milestone 2 implements ADR-005. Milestone 4 implements ADR-003 and ADR-007. Milestone 5 implements ADR-004 and ADR-008. Milestone 6 implements ADR-009. Milestone 7 implements ADR-010. Milestone 8 implements ADR-011. The others are still ahead.
 
 ### ADR-001: People use Identity Center
 
@@ -139,6 +139,20 @@ The trust condition is `StringEquals` on the whole `sub` claim. `StringLike`, an
 
 The boundary allows a ceiling and then denies IAM users and keys, organization changes, disabling CloudTrail, GuardDuty, AWS Config, or IAM Access Analyzer, and edits to the boundary. This root creates that policy because it runs in the dev account. `pull_request_target` is not in the trust. Fork pull requests must not be given this token.
 
+### ADR-011: Pull-request CI is static and does not use pull_request_target
+
+[`.github/workflows/pr-ci.yml`](.github/workflows/pr-ci.yml) runs on pull requests to `main` and on pushes to `main`. It does not use `pull_request_target`.
+
+The workflow has no AWS credentials, no OIDC permission, and no repository secrets. It checks formatting, `terraform validate`, TFLint, and `terraform test` with `-backend=false`. It runs Gitleaks over the full git history, Checkov 3.4.0, and Trivy. Checkov writes SARIF. Only that job has `security-events: write`. Every other job stays at `contents: read`.
+
+`pull_request` runs the workflow from the merge commit of the pull request. The token is read-only, and secrets are not passed in. `pull_request_target` would run in the base repository, with a token that can write, and would execute the base workflow against a checkout of the fork if a step asked for that checkout. Fork code would then see credentials this repository does not grant to CI. This workflow installs tools and runs the repository, so that event is the wrong one.
+
+A fork pull request still runs these jobs. GitHub may wait for a maintainer to approve Actions the first time that fork contributes. The SARIF upload is skipped for a fork, because GitHub does not grant `security-events: write` to that token. Checkov still fails the job when it finds a problem.
+
+Third-party actions are pinned to full commit SHAs. Terraform is 1.17.2. TFLint is 0.66.0 and the AWS ruleset is 0.50.0 from [`.tflint.hcl`](.tflint.hcl). Gitleaks is 8.30.1. Checkov is 3.4.0, with the same test-directory skips as pre-commit. The dev and prod deploy workflows are not this file. [`docs/github-oidc-workflow.md`](docs/github-oidc-workflow.md) is still a sketch.
+
+The job names to require in branch protection are listed in [CONTRIBUTING.md](CONTRIBUTING.md). The owner turns those on by hand. This workflow does not change repository settings.
+
 ## Security model
 
 Milestone 11 completes this STRIDE-lite assessment: abuse cases, existing controls, and residual risk. The notes below are the frame. They do not mean the controls exist yet, and they do not record accepted risk.
@@ -197,7 +211,9 @@ Present:
 │   │   ├── config.yml
 │   │   └── feature.yml
 │   ├── dependabot.yml
-│   └── pull_request_template.md
+│   ├── pull_request_template.md
+│   └── workflows
+│       └── pr-ci.yml
 ├── .gitignore
 ├── .pre-commit-config.yaml
 ├── .tflint.hcl
@@ -224,7 +240,6 @@ modules/
 envs/
   security/                 # delegated security services
 docs/                       # this lockdown checklist, then ADRs and the threat model
-.github/workflows/          # pull-request plan and security scans
 ```
 
 `.terraform.lock.hcl` files are committed next to the configuration that selects providers. State, `.terraform/` directories, plans, and `*.tfvars` are ignored. See [.gitignore](.gitignore).
@@ -370,7 +385,7 @@ terraform apply tfplan
 2. Apply non-production changes from the dev deploy role after the OIDC role exists.
 3. Apply production from the GitHub `production` environment after a required reviewer approves the run.
 
-Until those workflows exist, applies are manual and local, and only for the milestone that introduced the configuration. Production approval is a required reviewer on the GitHub `production` environment.
+[`.github/workflows/pr-ci.yml`](.github/workflows/pr-ci.yml) is the static check. It does not assume an AWS role and it does not apply. Applies stay manual and local until a later workflow assumes `gha-dev-deploy` or the production role. Production approval is a required reviewer on the GitHub `production` environment.
 
 ## Break-glass procedure
 
@@ -397,14 +412,14 @@ Until Identity Center exists, the only emergency credential is the management-ac
 - [x] 5. SCP guardrails module with tests
 - [x] 6. IAM Identity Center permission sets
 - [x] 7. GitHub OIDC provider and scoped dev deploy role
-- [ ] 8. Pull-request CI workflow running plan and security scans
+- [x] 8. Pull-request CI workflow running plan and security scans
 - [ ] 9. Prod role and approval-gated `production` environment
 - [ ] 10. Organization CloudTrail, GuardDuty, Access Analyzer, and billing alarm
 - [ ] 11. Finished README and threat model
 
 ## Working in this repo
 
-Install the local hooks before the first commit. [CONTRIBUTING.md](CONTRIBUTING.md) lists Terraform 1.10 or later, TFLint, Go (for the pinned Gitleaks build), and the `pre-commit install` / `pre-commit run --all-files` commands.
+Install the local hooks before the first commit. [CONTRIBUTING.md](CONTRIBUTING.md) lists Terraform 1.10 or later, TFLint, Go (for the pinned Gitleaks and actionlint builds), the `pre-commit` commands, and the status checks to require on `main`.
 
 Use the issue forms for bugs and for features or tasks. Pull requests follow [.github/pull_request_template.md](.github/pull_request_template.md). Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/). Report vulnerabilities through [SECURITY.md](SECURITY.md), not through a public issue.
 

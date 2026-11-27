@@ -1,7 +1,7 @@
 # Version updates for GitHub Actions and Terraform.
 # directory does not recurse. Add a terraform entry for each new root module
-# or module directory when it gains .tf files. GitHub Actions stays empty
-# until workflows exist.
+# or module directory when it gains .tf files. The github-actions entry
+# covers .github/workflows.
 
 version: 2
 updates:
