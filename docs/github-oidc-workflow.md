@@ -1,6 +1,6 @@
 # GitHub Actions workflow sketch
 
-This is documentation for the dev plan and deploy roles. It is not a workflow. Milestone 8 adds the real file under `.github/workflows/`. Do not copy this into `.github/workflows/` until that milestone.
+This is documentation for the dev plan and deploy roles. It is not a workflow. Milestone 8 added [`.github/workflows/pr-ci.yml`](../.github/workflows/pr-ci.yml), which is static: no AWS credentials and no OIDC. Do not copy this sketch into `.github/workflows/` until a later milestone intentionally assumes `gha-dev-plan` or `gha-dev-deploy`.
 
 The role ARN is a GitHub Actions **variable**, not a secret. Do not hardcode an account ID in the workflow. Set `AWS_DEV_PLAN_ROLE_ARN`, `AWS_DEV_DEPLOY_ROLE_ARN`, and `AWS_REGION` in the repository variables after apply, from `terraform output -raw`.
 

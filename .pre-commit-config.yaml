@@ -11,6 +11,12 @@ repos:
       - id: detect-private-key
       - id: check-yaml
 
+  - repo: https://github.com/rhysd/actionlint
+    rev: v1.7.12
+    hooks:
+      # Builds actionlint from the pinned tag. Needs Go, same as gitleaks.
+      - id: actionlint
+
   - repo: https://github.com/antonbabenko/pre-commit-terraform
     rev: v1.109.3
     hooks:
