@@ -150,6 +150,7 @@ jobs:
           curl -fsSL -o "${archive}" "https://github.com/gitleaks/gitleaks/releases/download/v${version}/gitleaks_${version}_linux_x64.tar.gz"
           echo "${checksum}  ${archive}" | sha256sum -c -
           tar -xzf "${archive}" -C "${tmpdir}" gitleaks
+          mkdir -p "${HOME}/.local/bin"
           install -m 0755 "${tmpdir}/gitleaks" "${HOME}/.local/bin/gitleaks"
           export PATH="${HOME}/.local/bin:${PATH}"
           gitleaks detect --redact --no-banner
@@ -255,6 +256,7 @@ jobs:
           curl -fsSL -o "${archive}" "https://github.com/rhysd/actionlint/releases/download/v${version}/actionlint_${version}_linux_amd64.tar.gz"
           echo "${checksum}  ${archive}" | sha256sum -c -
           tar -xzf "${archive}" -C "${tmpdir}" actionlint
+          mkdir -p "${HOME}/.local/bin"
           install -m 0755 "${tmpdir}/actionlint" "${HOME}/.local/bin/actionlint"
           export PATH="${HOME}/.local/bin:${PATH}"
           actionlint
@@ -285,6 +287,7 @@ jobs:
           curl -fsSL -o "${archive}" "https://github.com/zizmorcore/zizmor/releases/download/v${version}/zizmor-x86_64-unknown-linux-gnu.tar.gz"
           echo "${checksum}  ${archive}" | sha256sum -c -
           tar -xzf "${archive}" -C "${tmpdir}" zizmor
+          mkdir -p "${HOME}/.local/bin"
           install -m 0755 "${tmpdir}/zizmor" "${HOME}/.local/bin/zizmor"
           export PATH="${HOME}/.local/bin:${PATH}"
           zizmor --offline .github/workflows
