@@ -4,7 +4,7 @@ Secure AWS identity foundation, built with Terraform and operated from this repo
 
 The design uses AWS Organizations, IAM Identity Center for people, and GitHub Actions OpenID Connect (OIDC) for automation. There are no IAM users and no long-lived access keys. Preventive guardrails are service control policies (SCPs). Detective controls (an organization CloudTrail, GuardDuty, and IAM Access Analyzer) are delegated to a Security account. Terraform state lives in an encrypted, versioned S3 backend with locking.
 
-Milestone 2 is the state-backend bootstrap in [`bootstrap/state-backend`](bootstrap/state-backend). Milestone 4 is the organization root in [`organization`](organization). Milestone 5 is the service control policies in [`scps`](scps). Milestone 6 is IAM Identity Center in [`identity-center`](identity-center). They deploy only when you apply them. The [roadmap](#roadmap) is the order of work. Complete the [root-account lockdown](docs/root-account-lockdown.md) before those applies.
+Milestone 2 is the state-backend bootstrap in [`bootstrap/state-backend`](bootstrap/state-backend). Milestone 4 is the organization root in [`organization`](organization). Milestone 5 is the service control policies in [`scps`](scps). Milestone 6 is IAM Identity Center in [`identity-center`](identity-center). Milestone 7 is the GitHub Actions OIDC provider and the dev plan and deploy roles in [`github-oidc`](github-oidc). They deploy only when you apply them. The [roadmap](#roadmap) is the order of work. Complete the [root-account lockdown](docs/root-account-lockdown.md) before those applies.
 
 ## Target architecture
 
@@ -61,7 +61,7 @@ The state bucket is versioned, encrypted with a customer-managed key, and locked
 
 ## Architecture decisions
 
-These decisions are accepted for the design. Milestone 2 implements ADR-005. Milestone 4 implements ADR-003 and ADR-007. Milestone 5 implements ADR-004 and ADR-008. Milestone 6 implements ADR-009. The others are still ahead.
+These decisions are accepted for the design. Milestone 2 implements ADR-005. Milestone 4 implements ADR-003 and ADR-007. Milestone 5 implements ADR-004 and ADR-008. Milestone 6 implements ADR-009. Milestone 7 implements ADR-010. The others are still ahead.
 
 ### ADR-001: People use Identity Center
 
@@ -126,6 +126,18 @@ ReadOnlyAccess can read data. ViewOnlyAccess is the tighter console-only alterna
 DevPowerUser carries a customer-managed permissions boundary, `DevPowerUserBoundary`, referenced by name. The policy has to exist in the target account before the assignment. The JSON document allows the ceiling a boundary needs, then denies IAM users and keys, organization changes, the same security-service disable actions as the SCPs, and changes to the boundary or to a role that does not wear it. The document uses an account wildcard, not an account ID. The optional module under `identity-center/modules/dev-power-user-boundary` creates that policy in one account.
 
 MFA is required on every sign-in, with authenticator apps or security keys. That control lives in the Identity Center console. This module does not pretend to set it.
+
+### ADR-010: GitHub OIDC trust is an exact subject, split into plan and deploy
+
+Automation in the dev account assumes a role with GitHub Actions OIDC. [`github-oidc`](github-oidc) is its own root, applied in the dev account after the organization, the dev SCP, and Identity Center. The provider is not created in the management account, and it is not created in prod. Prod is a later milestone.
+
+The issuer is `token.actions.githubusercontent.com`. The audience is `sts.amazonaws.com`. AWS does not validate thumbprints for this issuer. The thumbprint list stays an optional variable.
+
+Two roles share a one-hour session and a permissions boundary named `GhaDevBoundary`. `gha-dev-plan` trusts only `repo:ORG/REPO:pull_request`. It has `ReadOnlyAccess`, state read, and lock-object writes under a key prefix. `gha-dev-deploy` trusts `repo:ORG/REPO:ref:refs/heads/main` and `repo:ORG/REPO:environment:dev`. It does not trust pull requests. Its identity policy is a variable allowlist, not `AdministratorAccess`. `iam:PassRole` is granted only for explicit role ARNs, never with a wildcard.
+
+The trust condition is `StringEquals` on the whole `sub` claim. `StringLike`, and `*` in the organization, repository, ref, or environment, are rejected. A wildcard on the organization or repository would let another repository mint a token for this role.
+
+The boundary allows a ceiling and then denies IAM users and keys, organization changes, disabling CloudTrail, GuardDuty, AWS Config, or IAM Access Analyzer, and edits to the boundary. This root creates that policy because it runs in the dev account. `pull_request_target` is not in the trust. Fork pull requests must not be given this token.
 
 ## Security model
 
@@ -193,7 +205,9 @@ Present:
 │   └── state-backend       # remote state bucket, KMS key, access logs
 ├── CONTRIBUTING.md
 ├── docs
+│   ├── github-oidc-workflow.md
 │   └── root-account-lockdown.md
+├── github-oidc             # GitHub OIDC provider and dev plan/deploy roles
 ├── identity-center         # permission sets, groups, and assignments
 ├── LICENSE
 ├── organization            # organization, OUs, and member accounts
@@ -206,10 +220,8 @@ Planned, and created by the milestone that fills them:
 
 ```text
 modules/
-  github-oidc/              # OIDC provider and deploy roles
   security-baseline/        # CloudTrail, GuardDuty, Access Analyzer, billing alarm
 envs/
-  management/               # OIDC
   security/                 # delegated security services
 docs/                       # this lockdown checklist, then ADRs and the threat model
 .github/workflows/          # pull-request plan and security scans
@@ -331,6 +343,27 @@ terraform plan -out=tfplan
 terraform apply tfplan
 ```
 
+### Grant the dev pipeline a role
+
+After Identity Center exists, apply the GitHub OIDC provider in the dev account with a dev admin session. The module README has the trust subjects, the boundary, and the state-bucket grants: [github-oidc/README.md](github-oidc/README.md). The workflow file is still a sketch in [docs/github-oidc-workflow.md](docs/github-oidc-workflow.md). Milestone 8 turns that sketch into `.github/workflows/`.
+
+```bash
+export AWS_PROFILE=your-dev-admin-profile
+cd github-oidc
+cp terraform.tfvars.example terraform.tfvars
+cp backend.hcl.example backend.hcl
+```
+
+Edit `terraform.tfvars`. Replace the placeholder org, repo, and account values. Edit `backend.hcl` from the state-backend outputs and keep the key `github-oidc/terraform.tfstate`.
+
+```bash
+terraform init -backend=false
+terraform test
+terraform init -backend-config=backend.hcl
+terraform plan -out=tfplan
+terraform apply tfplan
+```
+
 ### Later milestones
 
 1. Open pull requests for each milestone. Review the plan in the pull request. Do not paste secrets, account IDs, or state into the discussion.
@@ -363,7 +396,7 @@ Until Identity Center exists, the only emergency credential is the management-ac
 - [x] 4. Organizations and OUs module
 - [x] 5. SCP guardrails module with tests
 - [x] 6. IAM Identity Center permission sets
-- [ ] 7. GitHub OIDC provider and scoped dev deploy role
+- [x] 7. GitHub OIDC provider and scoped dev deploy role
 - [ ] 8. Pull-request CI workflow running plan and security scans
 - [ ] 9. Prod role and approval-gated `production` environment
 - [ ] 10. Organization CloudTrail, GuardDuty, Access Analyzer, and billing alarm

@@ -1,0 +1,29 @@
+# Copy to terraform.tfvars (gitignored).
+# example-org, example-repo, and every 12-digit value are placeholders.
+# 222222222222 stands in for the dev account. 111111111111 stands in for
+# the state account that owns the KMS key. Neither number is a real account.
+
+aws_region     = "us-east-1"
+aws_account_id = "222222222222"
+
+github_org  = "example-org"
+github_repo = "example-repo"
+
+# plan_subjects       = ["pull_request"]
+# deploy_refs         = ["refs/heads/main"]
+# deploy_environments = ["dev"]
+
+# Leave thumbprint_list unset. AWS does not validate thumbprints for GitHub Actions.
+
+boundary_policy_name = "GhaDevBoundary"
+
+state_bucket_name = "name-prefix-tfstate"
+state_key_prefix  = "envs/dev/"
+state_kms_key_arn = "arn:aws:kms:us-east-1:111111111111:key/00000000-0000-0000-0000-000000000000"
+
+# Starting point. Replace with the actions this pipeline uses.
+# deploy_actions = ["ec2:DescribeInstances"]
+# deploy_resource_arns = ["*"]
+
+# No iam:PassRole until you list exact role ARNs.
+# pass_role_arns = []

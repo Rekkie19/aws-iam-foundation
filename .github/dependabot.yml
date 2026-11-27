@@ -86,6 +86,38 @@ updates:
           - "*"
 
   - package-ecosystem: terraform
+    directory: /github-oidc
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      terraform:
+        patterns:
+          - "*"
+
+  - package-ecosystem: terraform
+    directory: /github-oidc/modules/gha-dev-boundary
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      terraform:
+        patterns:
+          - "*"
+
+  - package-ecosystem: terraform
     directory: /organization
     schedule:
       interval: weekly
